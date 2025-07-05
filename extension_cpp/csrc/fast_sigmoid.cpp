@@ -1,7 +1,8 @@
-#include <torch/torch.h>
-#include <map>
-#include <tuple>
-#include <cmath>
+#include <ATen/Operators.h>
+#include <torch/all.h>
+#include <torch/library.h>
+
+#include <vector>
 
 namespace extension_cpp {
 
@@ -26,7 +27,7 @@ std::pair<at::Tensor, at::Tensor> get_or_create_lookup_table(float min_val, floa
 }
 
 // Forward computation
-at::Tensor fast_sigmoid_cpu(const at::Tensor& input, float min_val, float max_val, int64_t num_entries) {
+at::Tensor fast_sigmoid_cpu(const at::Tensor& input, double min_val, double max_val, int64_t num_entries) {
     TORCH_CHECK(input.dtype() == torch::kFloat32);
     TORCH_CHECK(min_val < max_val);
     TORCH_CHECK(num_entries > 1);
@@ -68,7 +69,7 @@ at::Tensor fast_sigmoid_cpu(const at::Tensor& input, float min_val, float max_va
 
 // Backward computation
 at::Tensor fast_sigmoid_backward_cpu(const at::Tensor& grad_output, const at::Tensor& input, 
-                                   float min_val, float max_val, int64_t num_entries) {
+                                   double min_val, double max_val, int64_t num_entries) {
     TORCH_CHECK(input.dtype() == torch::kFloat32);
     TORCH_CHECK(grad_output.dtype() == torch::kFloat32);
     TORCH_CHECK(input.sizes() == grad_output.sizes());
@@ -113,8 +114,20 @@ at::Tensor fast_sigmoid_backward_cpu(const at::Tensor& grad_output, const at::Te
     return grad_input;
 }
 
-torch::Tensor fast_sigmoid(const torch::Tensor& input, float min_val, float max_val, int64_t num_entries) {
+torch::Tensor fast_sigmoid(const torch::Tensor& input, double min_val, double max_val, int64_t num_entries) {
     return fast_sigmoid_cpu(input, min_val, max_val, num_entries);
 }
 
+// Register the operators with PyTorch
+TORCH_LIBRARY_FRAGMENT(extension_cpp, m) {
+    m.def("fast_sigmoid(Tensor input, float min_val=-10.0, float max_val=10.0, int num_entries=1000) -> Tensor");
+    m.def("fast_sigmoid_backward(Tensor grad_output, Tensor input, float min_val, float max_val, int num_entries) -> Tensor");
+}
+
+TORCH_LIBRARY_IMPL(extension_cpp, CPU, m) {
+    m.impl("fast_sigmoid", &extension_cpp::fast_sigmoid_cpu);
+    m.impl("fast_sigmoid_backward", &extension_cpp::fast_sigmoid_backward_cpu);
+}
+
 } 
+

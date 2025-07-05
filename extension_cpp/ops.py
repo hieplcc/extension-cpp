@@ -1,8 +1,7 @@
 import torch
 from torch import Tensor
 
-__all__ = ["mymuladd", "myadd_out"]
-
+__all__ = ["mymuladd", "myadd_out", "fast_sigmoid"]
 
 def mymuladd(a: Tensor, b: Tensor, c: float) -> Tensor:
     """Performs a * b + c in an efficient fused kernel"""
@@ -61,3 +60,59 @@ def _(a, b):
 def myadd_out(a: Tensor, b: Tensor, out: Tensor) -> None:
     """Writes a + b into out"""
     torch.ops.extension_cpp.myadd_out.default(a, b, out)
+
+
+def fast_sigmoid(
+    input: Tensor, 
+    min_val: float = -10.0, 
+    max_val: float = 10.0, 
+    num_entries: int = 1000
+) -> Tensor:
+    """
+    Fast sigmoid approximation using lookup table with linear interpolation.
+    """
+    return torch.ops.extension_cpp.fast_sigmoid.default(input, min_val, max_val, num_entries)
+
+
+@torch.library.register_fake("extension_cpp::fast_sigmoid")
+def _(input, min_val, max_val, num_entries):
+    torch._check(input.dtype == torch.float32)
+    torch._check(input.device.type == "cpu")
+    torch._check(min_val < max_val)
+    torch._check(num_entries > 1)
+    return torch.empty_like(input)
+
+
+def _fast_sigmoid_backward(ctx, grad_output):
+    input, = ctx.saved_tensors
+    grad_input = torch.ops.extension_cpp.fast_sigmoid_backward.default(
+        grad_output, input, ctx.min_val, ctx.max_val, ctx.num_entries
+    )
+    return grad_input, None, None, None
+
+
+def _fast_sigmoid_setup_context(ctx, inputs, output):
+    input, min_val, max_val, num_entries = inputs
+    ctx.min_val = min_val
+    ctx.max_val = max_val
+    ctx.num_entries = num_entries
+    ctx.save_for_backward(input)
+
+# Register autograd support for fast_sigmoid
+torch.library.register_autograd(
+    "extension_cpp::fast_sigmoid", 
+    _fast_sigmoid_backward, 
+    setup_context=_fast_sigmoid_setup_context
+)
+
+
+@torch.library.register_fake("extension_cpp::fast_sigmoid_backward")
+def _(grad_output, input, min_val, max_val, num_entries):
+    torch._check(input.dtype == torch.float32)
+    torch._check(grad_output.dtype == torch.float32)
+    torch._check(input.device.type == "cpu")
+    torch._check(grad_output.device.type == "cpu")
+    torch._check(input.sizes() == grad_output.sizes())
+    torch._check(min_val < max_val)
+    torch._check(num_entries > 1)
+    return torch.empty_like(input)
