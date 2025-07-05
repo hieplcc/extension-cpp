@@ -1,23 +1,44 @@
 #include <ATen/Operators.h>
 #include <torch/all.h>
 #include <torch/library.h>
-
-#include <vector>
+#include <shared_mutex>
+#include <map>
 
 namespace extension_cpp {
 
-using LookupTableKey = std::tuple<float, float, int64_t>;
-static std::map<LookupTableKey, std::pair<at::Tensor, at::Tensor>> lookup_table_cache;
+//Key: a tuple of (min_val, max_val, num_entries)
+using LookupTableKey = std::tuple<float, float, int64_t>; 
+
+//Value: a pair of tensors (x_vals, y_vals)
+using LookupTableValue = std::pair<at::Tensor, at::Tensor>;
+
+static std::map<LookupTableKey, LookupTableValue> lookup_table_cache;
+
+// Shared mutex allowing multiple readers and single writer (read opearations normally outnumber writes)
+static std::shared_mutex lookup_table_mutex; 
 
 //Get the cached lookup table or create a new if it doesn't exist
 std::pair<at::Tensor, at::Tensor> get_or_create_lookup_table(float min_val, float max_val, int64_t num_entries) {
     LookupTableKey key{min_val, max_val, num_entries};
     
+    // Read from cache with shared lock (allows multiple readers)
+    {
+        std::shared_lock<std::shared_mutex> read_lock(lookup_table_mutex);
+        auto it = lookup_table_cache.find(key);
+        if (it != lookup_table_cache.end()) {
+            return it->second;
+        }
+    }
+
+    // Cache miss - acquire exclusive lock (only one writer at a time)
+    std::unique_lock<std::shared_mutex> write_lock(lookup_table_mutex);
+    
+    // Double-check pattern: another thread might have created it while we waited
     auto it = lookup_table_cache.find(key);
     if (it != lookup_table_cache.end()) {
         return it->second;
     }
-    
+
     // Create new lookup table
     at::Tensor x_vals = torch::linspace(min_val, max_val, num_entries, torch::dtype(torch::kFloat32).device(torch::kCPU));
     at::Tensor y_vals = torch::sigmoid(x_vals);
@@ -32,8 +53,8 @@ at::Tensor fast_sigmoid_cpu(const at::Tensor& input, double min_val, double max_
     TORCH_CHECK(min_val < max_val);
     TORCH_CHECK(num_entries > 1);
     TORCH_INTERNAL_ASSERT(input.device().type() == at::DeviceType::CPU);
-    
-    auto [x_vals, y_vals] = get_or_create_lookup_table(min_val, max_val, num_entries);
+
+    const auto& [x_vals, y_vals] = get_or_create_lookup_table(min_val, max_val, num_entries);
     
     at::Tensor input_contig = input.contiguous();
     at::Tensor output = torch::empty(input_contig.sizes(), input_contig.options());
@@ -47,11 +68,11 @@ at::Tensor fast_sigmoid_cpu(const at::Tensor& input, double min_val, double max_
     for (int64_t i = 0; i < input_contig.numel(); i++) {
         float x = input_ptr[i];
         
-        if (x <= min_val) [[unlikely]] { 
+        if (x <= min_val) { 
             output_ptr[i] = y_vals_ptr[0];
-        } else if (x >= max_val) [[unlikely]] {
+        } else if (x >= max_val) {
             output_ptr[i] = y_vals_ptr[num_entries - 1];
-        } else [[likely]] {
+        } else {
             float idx_f = (x - min_val) * scale;
             int64_t lower = static_cast<int64_t>(std::floor(idx_f));
             int64_t upper = lower + 1;
@@ -78,7 +99,7 @@ at::Tensor fast_sigmoid_backward_cpu(const at::Tensor& grad_output, const at::Te
     TORCH_INTERNAL_ASSERT(input.device().type() == at::DeviceType::CPU);
     TORCH_INTERNAL_ASSERT(grad_output.device().type() == at::DeviceType::CPU);
     
-    auto [x_vals, y_vals] = get_or_create_lookup_table(min_val, max_val, num_entries);
+    const auto& [x_vals, y_vals] = get_or_create_lookup_table(min_val, max_val, num_entries);
     
     at::Tensor input_contig = input.contiguous();
     at::Tensor grad_contig = grad_output.contiguous();
@@ -95,9 +116,9 @@ at::Tensor fast_sigmoid_backward_cpu(const at::Tensor& grad_output, const at::Te
     for (int64_t i = 0; i < input_contig.numel(); i++) {
         float x = input_ptr[i];
         
-        if (x <= min_val || x >= max_val) [[unlikely]] {
+        if (x <= min_val || x >= max_val){
             grad_input_ptr[i] = 0.0f;
-        } else [[likely]] {
+        } else {
             float idx_f = (x - min_val) * scale;
             int64_t idx = static_cast<int64_t>(std::floor(idx_f));
             
