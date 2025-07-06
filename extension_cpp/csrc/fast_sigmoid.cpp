@@ -3,6 +3,7 @@
 #include <torch/library.h>
 #include <shared_mutex>
 #include <map>
+#include <iostream>
 #include "../../utils/lru_cache.h"
 
 // #define USE_LRU_CACHE
@@ -47,16 +48,19 @@ std::pair<at::Tensor, at::Tensor> get_or_create_lookup_table(float min_val, floa
         std::shared_lock<std::shared_mutex> read_lock(lookup_table_mutex);
         auto it = lookup_table_cache.find(key);
         if (it != lookup_table_cache.end()) {
+            // std::cout << "Cache hit for key: (" << min_val << ", " << max_val << ", " << num_entries << ")" << std::endl;
             return it->second;
         }
     }
 
+    // std::cout << "Cache miss for key: (" << min_val << ", " << max_val << ", " << num_entries << ")" << std::endl;  
     // Cache miss - acquire exclusive lock (only one writer at a time)
     std::unique_lock<std::shared_mutex> write_lock(lookup_table_mutex);
     
     // Double-check pattern: another thread might have created it while we waited
     auto it = lookup_table_cache.find(key);
     if (it != lookup_table_cache.end()) {
+
         return it->second;
     }
 

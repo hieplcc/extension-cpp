@@ -26,10 +26,12 @@ find_package(Torch REQUIRED)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 
 # Add include directories
-include_directories(extension_cpp/csrc/include)
+include_directories(extension_cpp/csrc/include
+                    utils)
 
 # Add the example executable
-add_executable(fast_sigmoid_cpp_test test/fast_sigmoid/fast_sigmoid_cpp_test.cpp)
+add_executable(fast_sigmoid_cpp_test 
+               test/fast_sigmoid/fast_sigmoid_cpp_test.cpp)
 
 # Set output directory for the test executable
 set_target_properties(fast_sigmoid_cpp_test PROPERTIES
