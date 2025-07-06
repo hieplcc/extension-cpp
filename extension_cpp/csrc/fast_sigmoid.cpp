@@ -8,6 +8,19 @@
 
 // #define USE_LRU_CACHE
 
+#if defined(__has_cpp_attribute)
+#  if __has_cpp_attribute(likely) && __cplusplus >= 202002L
+#    define LIKELY [[likely]]
+#    define UNLIKELY [[unlikely]]
+#  else
+#    define LIKELY
+#    define UNLIKELY
+#  endif
+#else
+#  define LIKELY
+#  define UNLIKELY
+#endif
+
 namespace extension_cpp {
 
 using LookupTableKey = std::tuple<float, float, int64_t>;   // Key: a tuple of (min_val, max_val, num_entries)
@@ -95,11 +108,11 @@ at::Tensor fast_sigmoid_cpu(const at::Tensor& input, double min_val, double max_
     for (int64_t i = 0; i < input_contig.numel(); i++) {
         float x = input_ptr[i];
         
-        if (x <= min_val) { 
+        if (x <= min_val) UNLIKELY { 
             output_ptr[i] = y_vals_ptr[0];
-        } else if (x >= max_val) {
+        } else if (x >= max_val) UNLIKELY {
             output_ptr[i] = y_vals_ptr[num_entries - 1];
-        } else {
+        } else LIKELY {
             float idx_f = (x - min_val) * scale;
             int64_t lower = static_cast<int64_t>(std::floor(idx_f));
             int64_t upper = lower + 1;
@@ -143,9 +156,9 @@ at::Tensor fast_sigmoid_backward_cpu(const at::Tensor& grad_output, const at::Te
     for (int64_t i = 0; i < input_contig.numel(); i++) {
         float x = input_ptr[i];
         
-        if (x <= min_val || x >= max_val){
+        if (x <= min_val || x >= max_val) UNLIKELY {
             grad_input_ptr[i] = 0.0f;
-        } else {
+        } else LIKELY {
             float idx_f = (x - min_val) * scale;
             int64_t idx = static_cast<int64_t>(std::floor(idx_f));
             
