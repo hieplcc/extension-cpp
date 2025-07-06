@@ -3,18 +3,39 @@
 #include <torch/library.h>
 #include <shared_mutex>
 #include <map>
+#include "../../utils/lru_cache.h"
+
+// #define USE_LRU_CACHE
 
 namespace extension_cpp {
 
-//Key: a tuple of (min_val, max_val, num_entries)
-using LookupTableKey = std::tuple<float, float, int64_t>; 
+using LookupTableKey = std::tuple<float, float, int64_t>;   // Key: a tuple of (min_val, max_val, num_entries)
+using LookupTableValue = std::pair<at::Tensor, at::Tensor>; // Value: a pair of tensors (x_vals, y_vals)
 
-//Value: a pair of tensors (x_vals, y_vals)
-using LookupTableValue = std::pair<at::Tensor, at::Tensor>;
+#ifdef USE_LRU_CACHE
+
+static LRUCache<LookupTableKey, LookupTableValue> lookup_table_lru_cache(20); 
+std::pair<at::Tensor, at::Tensor> get_or_create_lookup_table(float min_val, float max_val, int64_t num_entries) {
+    LookupTableKey key{min_val, max_val, num_entries};
+    LookupTableValue value;
+
+    if (lookup_table_lru_cache.get(key, value)) {
+        return value;
+    }
+
+    at::Tensor x_vals = torch::linspace(min_val, max_val, num_entries, torch::dtype(torch::kFloat32).device(torch::kCPU));
+    at::Tensor y_vals = torch::sigmoid(x_vals);
+    value = std::make_pair(x_vals, y_vals);
+
+    lookup_table_lru_cache.put(key, value);
+    return value;
+}
+
+#else
 
 static std::map<LookupTableKey, LookupTableValue> lookup_table_cache;
 
-// Shared mutex allowing multiple readers and single writer (read opearations normally outnumber writes)
+// shared_mutex for multiple readers and single writer (read opearations normally outnumber writes)
 static std::shared_mutex lookup_table_mutex; 
 
 //Get the cached lookup table or create a new if it doesn't exist
@@ -46,6 +67,8 @@ std::pair<at::Tensor, at::Tensor> get_or_create_lookup_table(float min_val, floa
     lookup_table_cache[key] = std::make_pair(x_vals, y_vals);
     return std::make_pair(x_vals, y_vals);
 }
+
+#endif
 
 // Forward computation
 at::Tensor fast_sigmoid_cpu(const at::Tensor& input, double min_val, double max_val, int64_t num_entries) {
