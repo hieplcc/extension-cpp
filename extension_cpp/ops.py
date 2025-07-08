@@ -112,7 +112,7 @@ def _(grad_output, input, min_val, max_val, num_entries):
     torch._check(grad_output.dtype == torch.float32)
     torch._check(input.device.type == "cpu")
     torch._check(grad_output.device.type == "cpu")
-    torch._check(input.sizes() == grad_output.sizes())
+    torch._check(input.size() == grad_output.size())
     torch._check(min_val < max_val)
     torch._check(num_entries > 1)
     return torch.empty_like(input)

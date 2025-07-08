@@ -49,7 +49,7 @@ std::pair<at::Tensor, at::Tensor> get_or_create_lookup_table(float min_val, floa
 
 static std::map<LookupTableKey, LookupTableValue> lookup_table_cache;
 
-// shared_mutex for multiple readers and single writer (read opearations normally outnumber writes)
+// shared_mutex for multiple readers and single writer (read operations normally outnumber writes)
 static std::shared_mutex lookup_table_mutex; 
 
 //Get the cached lookup table or create a new if it doesn't exist
@@ -114,7 +114,11 @@ at::Tensor fast_sigmoid_cpu(const at::Tensor& input, double min_val, double max_
             output_ptr[i] = y_vals_ptr[num_entries - 1];
         } else LIKELY {
             float idx_f = (x - min_val) * scale;
-            int64_t lower = static_cast<int64_t>(std::floor(idx_f));
+            int64_t idx = static_cast<int64_t>(std::floor(idx_f));
+
+            // Make sure that lower is less than num_entries - 1. Otherwise, upper (lower + 1) will be out of bounds
+            // (num_entries - 2 >= 0 due to num_entries > 1 check)
+            int64_t lower = std::min(idx, num_entries - 2);
             int64_t upper = lower + 1;
             
             float alpha = idx_f - static_cast<float>(lower);
@@ -160,7 +164,10 @@ at::Tensor fast_sigmoid_backward_cpu(const at::Tensor& grad_output, const at::Te
             grad_input_ptr[i] = 0.0f;
         } else LIKELY {
             float idx_f = (x - min_val) * scale;
-            int64_t idx = static_cast<int64_t>(std::floor(idx_f));
+            
+            // Make sure that idx is less than num_entries - 1. Otherwise, (idx + 1) will be out of bounds
+            // (num_entries - 2 always >= 0 due to num_entries > 1 check)
+            int64_t idx = std::min(static_cast<int64_t>(std::floor(idx_f)), num_entries - 2);
             
             float x0 = x_vals_ptr[idx];
             float x1 = x_vals_ptr[idx + 1];
@@ -181,7 +188,7 @@ torch::Tensor fast_sigmoid(const torch::Tensor& input, double min_val, double ma
 
 // Register the operators with PyTorch
 TORCH_LIBRARY_FRAGMENT(extension_cpp, m) {
-    m.def("fast_sigmoid(Tensor input, float min_val=-10.0, float max_val=10.0, int num_entries=1000) -> Tensor");
+    m.def("fast_sigmoid(Tensor input, float min_val, float max_val, int num_entries) -> Tensor");
     m.def("fast_sigmoid_backward(Tensor grad_output, Tensor input, float min_val, float max_val, int num_entries) -> Tensor");
 }
 

@@ -7,6 +7,29 @@ import pytest
 from extension_cpp.ops import fast_sigmoid
 
 class TestFastSigmoid(TestCase):
+    def sample_inputs(self, device, *, requires_grad=False):
+        def make_tensor(*size):
+            return torch.randn(size, device=device, requires_grad=requires_grad)
+
+        def make_nondiff_tensor(*size):
+            return torch.randn(size, device=device, requires_grad=False)
+
+        return [
+            [make_tensor(3)],
+            [make_tensor(20)],
+            [make_tensor(32)],
+            [make_nondiff_tensor(2, 3)],
+        ]
+    
+    def test_op_check(self):
+        samples = self.sample_inputs('cpu', requires_grad=True)
+        for args in samples:
+            opcheck(
+                torch.ops.extension_cpp.fast_sigmoid.default,
+                args,
+                kwargs={"min_val": -10.0, "max_val": 10.0, "num_entries": 1000}
+            )
+
     def test_fast_sigmoid_basic(self):
         """Test basic fast_sigmoid functionality"""
         x = torch.randn(10, dtype=torch.float32)
@@ -24,10 +47,8 @@ class TestFastSigmoid(TestCase):
         fast_result = fast_sigmoid(x)
         torch_result = torch.sigmoid(x)
         
-        relative_error = torch.abs(fast_result - torch_result) / (torch_result + 1e-8)
-        mean_error = torch.mean(relative_error)
-        
-        assert mean_error < 0.01  # Less than 1% error on average
+        #Less than 1% relative error
+        assert torch.allclose(fast_result, torch_result, rtol=1e-2, atol=1e-4)
 
     def test_invalid_range_or_entries(self):
         """Invalid min/max or num_entries"""
@@ -68,10 +89,8 @@ class TestFastSigmoid(TestCase):
             assert torch.all(fast_result >= 0.0)
             assert torch.all(fast_result <= 1.0)
 
-            relative_error = torch.abs(fast_result - torch_result) / (torch_result + 1e-8)
-            mean_error = torch.mean(relative_error)
-            
-            assert mean_error < 0.01  # Less than 1% error on average
+            #Less than 1% relative error
+            assert torch.allclose(fast_result, torch_result, rtol=1e-2, atol=1e-4) 
 
 if __name__ == "__main__":
     unittest.main()
