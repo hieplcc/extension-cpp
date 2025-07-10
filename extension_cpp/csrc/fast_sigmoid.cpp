@@ -94,7 +94,10 @@ at::Tensor fast_sigmoid_cpu(const at::Tensor& input, double min_val, double max_
     TORCH_CHECK(num_entries > 1);
     TORCH_INTERNAL_ASSERT(input.device().type() == at::DeviceType::CPU);
 
-    const auto& [x_vals, y_vals] = get_or_create_lookup_table(min_val, max_val, num_entries);
+    const float min_val_f = static_cast<float>(min_val);
+    const float max_val_f = static_cast<float>(max_val);
+
+    const auto& [x_vals, y_vals] = get_or_create_lookup_table(min_val_f, max_val_f, num_entries);
     
     at::Tensor input_contig = input.contiguous();
     at::Tensor output = torch::empty(input_contig.sizes(), input_contig.options());
@@ -103,22 +106,20 @@ at::Tensor fast_sigmoid_cpu(const at::Tensor& input, double min_val, double max_
     float* output_ptr = output.data_ptr<float>();
     const float* y_vals_ptr = y_vals.data_ptr<float>();
     
-    const float scale = static_cast<float>(num_entries - 1) / (max_val - min_val);
+    const float scale = static_cast<float>(num_entries - 1) / (max_val_f - min_val_f);
     
     for (int64_t i = 0; i < input_contig.numel(); i++) {
         float x = input_ptr[i];
         
-        if (x <= min_val) UNLIKELY { 
+        if (x <= min_val_f) UNLIKELY { 
             output_ptr[i] = y_vals_ptr[0];
-        } else if (x >= max_val) UNLIKELY {
+        } else if (x >= max_val_f) UNLIKELY {
             output_ptr[i] = y_vals_ptr[num_entries - 1];
         } else LIKELY {
-            float idx_f = (x - min_val) * scale;
+            float idx_f = (x - min_val_f) * scale;
             int64_t idx = static_cast<int64_t>(std::floor(idx_f));
 
-            // Make sure that lower is less than num_entries - 1. Otherwise, upper (lower + 1) will be out of bounds
-            // (num_entries - 2 >= 0 due to num_entries > 1 check)
-            int64_t lower = std::min(idx, num_entries - 2);
+            int64_t lower = static_cast<int64_t>(std::floor(idx_f));
             int64_t upper = lower + 1;
             
             float alpha = idx_f - static_cast<float>(lower);
@@ -143,7 +144,10 @@ at::Tensor fast_sigmoid_backward_cpu(const at::Tensor& grad_output, const at::Te
     TORCH_INTERNAL_ASSERT(input.device().type() == at::DeviceType::CPU);
     TORCH_INTERNAL_ASSERT(grad_output.device().type() == at::DeviceType::CPU);
     
-    const auto& [x_vals, y_vals] = get_or_create_lookup_table(min_val, max_val, num_entries);
+    const float min_val_f = static_cast<float>(min_val);
+    const float max_val_f = static_cast<float>(max_val);
+
+    const auto& [x_vals, y_vals] = get_or_create_lookup_table(min_val_f, max_val_f, num_entries);
     
     at::Tensor input_contig = input.contiguous();
     at::Tensor grad_contig = grad_output.contiguous();
@@ -155,19 +159,17 @@ at::Tensor fast_sigmoid_backward_cpu(const at::Tensor& grad_output, const at::Te
     const float* x_vals_ptr = x_vals.data_ptr<float>();
     const float* y_vals_ptr = y_vals.data_ptr<float>();
     
-    const float scale = static_cast<float>(num_entries - 1) / (max_val - min_val);
+    const float scale = static_cast<float>(num_entries - 1) / (max_val_f - min_val_f);
     
     for (int64_t i = 0; i < input_contig.numel(); i++) {
         float x = input_ptr[i];
         
-        if (x <= min_val || x >= max_val) UNLIKELY {
+        if (x <= min_val_f || x >= max_val_f) UNLIKELY {
             grad_input_ptr[i] = 0.0f;
         } else LIKELY {
-            float idx_f = (x - min_val) * scale;
+            float idx_f = (x - min_val_f) * scale;
             
-            // Make sure that idx is less than num_entries - 1. Otherwise, (idx + 1) will be out of bounds
-            // (num_entries - 2 always >= 0 due to num_entries > 1 check)
-            int64_t idx = std::min(static_cast<int64_t>(std::floor(idx_f)), num_entries - 2);
+            int64_t idx = static_cast<int64_t>(std::floor(idx_f));
             
             float x0 = x_vals_ptr[idx];
             float x1 = x_vals_ptr[idx + 1];
