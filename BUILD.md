@@ -1,69 +1,58 @@
-# Fast Sigmoid C++ Extension - Build Guide
+## Build and Install Workflow
 
-### Prerequisites
+### 1. Build the Library and Examples
 
-- **C++ Version**: Minimum C++17 
-- **CMake**: Version 3.12 or higher
-- **Python 3**: For automatic PyTorch path detection
-- **PyTorch**: Installed and accessible via Python (for libtorch libraries)
-
-### Build Instructions
-
-#### Step 1: Clone and navigate to Project Directory
 ```bash
-git clone https://github.com/hieplcc/extension-cpp.git
-cd /path/to/extension-cpp
-```
+# Go to the extension-cpp folder
+cd extension-cpp
 
-#### Step 2: Create Build Directory
-```bash
+# Create and enter the build directory
 mkdir build
 cd build
-```
 
-#### Step 3: Configure with CMake
-```bash
+# Configure and build
 cmake ..
-```
-#### Step 4: Build the Project
-```bash
 make
+
+# Check the example executable
+ls examples/fast_sigmoid_cpp_test
 ```
-#### Step 5: Run the Test Application
+
+---
+
+### 2. Install the Library
+
 ```bash
-./test/fast_sigmoid/fast_sigmoid_cpp_test
+# From inside the build directory
+make install DESTDIR=../install_demo
+```
+- This will stage the install tree under `extension-cpp/install_demo/usr/local`.
+
+---
+
+### 3. Demo: Use the Library in an External App with find_package(fast_sigmoid)
+
+```bash
+# Go to the external app demo folder
+cd ../external_app_demo
+
+# Create and enter the build directory
+mkdir build
+cd build
+
+# Configure (CMakeLists.txt will set CMAKE_PREFIX_PATH automatically)
+cmake ..
+
+# Build the external app
+make
+
+# Run the external app
+./external_app
 ```
 
-#### Build Output
+---
 
-After successful build, you'll find:
-- **Library**: `libfast_sigmoid_lib.a` (static library)
-- **Test Executable**: `test/fast_sigmoid/fast_sigmoid_cpp_test`
-
-### Expected Output
-
-The test application should produce output similar to:
-```
-Input: -15.0000
--11.6667
- -8.3333
- -5.0000
- -1.6667
-  1.6667
-  5.0000
-  8.3333
- 11.6667
- 15.0000
-[ CPUFloatType{10} ]
-Fast Sigmoid:  0.0000
- 0.0000
- 0.0002
- 0.0067
- 0.1589
- 0.8411
- 0.9933
- 0.9998
- 1.0000
- 1.0000
-[ CPUFloatType{10} ]
-``` 
+**Summary:**  
+- Build and install the library and examples from the main project.
+- Use `make install DESTDIR=../install_demo` to stage the install.
+- Build and run an external app that uses `find_package(fast_sigmoid)` to link to your installed library.
