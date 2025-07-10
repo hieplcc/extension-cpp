@@ -37,22 +37,34 @@ y_train = torch.tensor(y_train, dtype=torch.long)
 X_test = torch.tensor(X_test, dtype=torch.float32)
 y_test = torch.tensor(y_test, dtype=torch.long)
 
-print("=" * 60)
-print("TRAINING WITH TORCH.SIGMOID (ORIGINAL)")
-print("=" * 60)
 
-class SimpleMLP(nn.Module):
-    def __init__(self):
+# ============================================================================
+# BASE MLP CLASS
+# ============================================================================
+class BaseMLP(nn.Module):
+    def __init__(self, activation_fn):
         super().__init__()
         self.fc1 = nn.Linear(2, 16)
         self.fc2 = nn.Linear(16, 8)
         self.fc3 = nn.Linear(8, 3)
-
+        self.activation_fn = activation_fn
     def forward(self, x):
-        x = torch.sigmoid(self.fc1(x))
-        x = torch.sigmoid(self.fc2(x))
+        x = self.activation_fn(self.fc1(x))
+        x = self.activation_fn(self.fc2(x))
         x = self.fc3(x)
         return x
+    
+# ============================================================================
+# TRAINING WITH TORCH.SIGMOID (ORIGINAL)
+# ============================================================================
+
+print("=" * 60)
+print("TRAINING WITH TORCH.SIGMOID (ORIGINAL)")
+print("=" * 60)
+
+class SimpleMLP(BaseMLP):
+    def __init__(self):
+        super().__init__(lambda x: torch.sigmoid(x))
 
 model = SimpleMLP()
 criterion = nn.CrossEntropyLoss()
@@ -99,18 +111,9 @@ print("TRAINING WITH FAST_SIGMOID (REPLACEMENT)")
 print("=" * 60)
 
 # Create fast_sigmoid version of the same model
-class FastSigmoidMLP(nn.Module):
+class FastSigmoidMLP(BaseMLP):
     def __init__(self):
-        super().__init__()
-        self.fc1 = nn.Linear(2, 16)
-        self.fc2 = nn.Linear(16, 8)
-        self.fc3 = nn.Linear(8, 3)
-
-    def forward(self, x):
-        x = fast_sigmoid(self.fc1(x), -5, 5, 2000)  # Replace torch.sigmoid with fast_sigmoid
-        x = fast_sigmoid(self.fc2(x), -5, 5, 2000)  # Replace torch.sigmoid with fast_sigmoid
-        x = self.fc3(x)
-        return x
+        super().__init__(lambda x: fast_sigmoid(x, -5, 5, 2000))
 
 # Train fast_sigmoid model with identical setup
 model_fast = FastSigmoidMLP()
@@ -199,3 +202,20 @@ if PLOT:
 
     plot_decision_boundary(model, X, y, scaler)
     plot_decision_boundary(model_fast, X, y, scaler)
+
+
+# ============================================================================
+# PLOT LOSS CURVES
+# ============================================================================
+
+if PLOT:
+    plt.figure(figsize=(8, 5))
+    plt.plot(torch_sigmoid_loss_history, label='torch.sigmoid', linestyle='-', color='blue')
+    plt.plot(fast_sigmoid_loss_history, label='fast_sigmoid', linestyle='--', color='orange')
+    plt.title('Training Loss Comparison')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
