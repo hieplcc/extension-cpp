@@ -117,9 +117,11 @@ at::Tensor fast_sigmoid_cpu(const at::Tensor& input, double min_val, double max_
             output_ptr[i] = y_vals_ptr[num_entries - 1];
         } else LIKELY {
             float idx_f = (x - min_val_f) * scale;
+
             int64_t idx = static_cast<int64_t>(std::floor(idx_f));
 
-            int64_t lower = static_cast<int64_t>(std::floor(idx_f));
+            // Due to floating point rounding, it is necessary to ensure `lower`, `uppper` doesn't go out of bounds 
+            int64_t lower = std::max(int64_t(0), std::min(idx, num_entries - 2));
             int64_t upper = lower + 1;
             
             float alpha = idx_f - static_cast<float>(lower);
@@ -170,6 +172,9 @@ at::Tensor fast_sigmoid_backward_cpu(const at::Tensor& grad_output, const at::Te
             float idx_f = (x - min_val_f) * scale;
             
             int64_t idx = static_cast<int64_t>(std::floor(idx_f));
+
+            // Due to floating point rounding, it is necessary to ensure `idx`, `idx + 1` doesn't go out of bounds 
+            idx = std::max(int64_t(0), std::min(idx, num_entries - 2));
             
             float x0 = x_vals_ptr[idx];
             float x1 = x_vals_ptr[idx + 1];
