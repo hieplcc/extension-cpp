@@ -9,18 +9,23 @@ execute_process(
     RESULT_VARIABLE TORCH_FOUND
 )
 
+# Check if PyTorch was found
 if(NOT TORCH_FOUND EQUAL 0)
     message(FATAL_ERROR "Could not find PyTorch. Make sure it's installed and accessible via python3.")
 endif()
 
-# Clear or initialize CMAKE_PREFIX_PATH
-set(CMAKE_PREFIX_PATH "")
-
 # Add PyTorch installation path (from Python)
 list(APPEND CMAKE_PREFIX_PATH "${TORCH_PREFIX_PATH}")
 
+# Append Python virtual env path if exists
+if(DEFINED ENV{VIRTUAL_ENV})
+    list(APPEND CMAKE_PREFIX_PATH "$ENV{VIRTUAL_ENV}")
+endif()
+
 # Add fast_sigmoid install path
-list(APPEND CMAKE_PREFIX_PATH "../install_demo/usr/local")
+if(DEFINED FAST_SIGMOID_PREFIX_PATH)
+    list(APPEND CMAKE_PREFIX_PATH "${FAST_SIGMOID_PREFIX_PATH}")
+endif()
 
 message(STATUS "CMAKE_PREFIX_PATH = ${CMAKE_PREFIX_PATH}")
 
