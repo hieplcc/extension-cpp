@@ -1,0 +1,12 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+
+# Find PyTorch dependency
+find_dependency(Torch REQUIRED)
+
+# Include the targets file
+include("${CMAKE_CURRENT_LIST_DIR}/fast_sigmoid_targets.cmake")
+
+# Provide the targets
+check_required_components(fast_sigmoid)
